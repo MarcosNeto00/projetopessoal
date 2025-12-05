@@ -1,0 +1,314 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroFlow - Agenda Gamificada</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <span>⚔️</span>
+                NeuroFlow
+                <span>🛡️</span>
+            </h1>
+            <p>Sua jornada heroica de conquistas ⚔️</p>
+        </div>
+ 
+        <!-- Tela Home -->
+        <div id="homeScreen" class="screen active">
+            <!-- Character Card -->
+            <div class="card">
+                <div class="character-section">
+                    <div class="character-container">
+                        <svg id="characterSvg" width="120" height="160" viewBox="0 0 120 160">
+                            <ellipse cx="60" cy="110" rx="25" ry="35" fill="#1e40af" stroke="#1e3a8a" stroke-width="2"/>
+                            <circle cx="60" cy="50" r="22" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"/>
+                            <path d="M 38 45 Q 38 30 60 25 Q 82 30 82 45 L 82 50 L 38 50 Z" fill="#94a3b8" stroke="#64748b" stroke-width="2"/>
+                            <rect x="56" y="25" width="8" height="12" fill="#ef4444" rx="2"/>
+                            <circle cx="52" cy="48" r="3" fill="#1e293b"/>
+                            <circle cx="68" cy="48" r="3" fill="#1e293b"/>
+                            <rect x="42" y="75" width="36" height="30" fill="#cbd5e1" stroke="#94a3b8" stroke-width="2" rx="3"/>
+                            <line x1="60" y1="75" x2="60" y2="105" stroke="#94a3b8" stroke-width="2"/>
+                            <rect x="32" y="80" width="10" height="35" fill="#1e40af" stroke="#1e3a8a" stroke-width="1" rx="5"/>
+                            <rect x="78" y="80" width="10" height="35" fill="#1e40af" stroke="#1e3a8a" stroke-width="1" rx="5"/>
+                            <path d="M 25 90 L 20 95 L 20 105 L 25 110 L 30 105 L 30 95 Z" fill="#3b82f6" stroke="#1e40af" stroke-width="2"/>
+                            <line x1="25" y1="92" x2="25" y2="108" stroke="#60a5fa" stroke-width="1"/>
+                            <rect x="88" y="85" width="4" height="30" fill="#94a3b8" stroke="#64748b" stroke-width="1"/>
+                            <rect x="86" y="82" width="8" height="6" fill="#b45309" rx="1"/>
+                            <path d="M 88 115 L 90 125 L 92 115 Z" fill="#94a3b8" stroke="#64748b" stroke-width="1"/>
+                            <rect x="48" y="135" width="10" height="20" fill="#1e40af" stroke="#1e3a8a" stroke-width="1" rx="2"/>
+                            <rect x="62" y="135" width="10" height="20" fill="#1e40af" stroke="#1e3a8a" stroke-width="1" rx="2"/>
+                            <rect x="46" y="152" width="14" height="6" fill="#92400e" stroke="#78350f" stroke-width="1" rx="2"/>
+                            <rect x="60" y="152" width="14" height="6" fill="#92400e" stroke="#78350f" stroke-width="1" rx="2"/>
+                            <ellipse cx="65" cy="35" rx="3" ry="2" fill="#e2e8f0" opacity="0.6"/>
+                            <g id="characterStars"></g>
+                        </svg>
+                        <p id="characterClass" style="text-align: center; font-weight: bold; color: #1e40af; margin-top: 10px;">Aprendiz</p>
+                    </div>
+                    <div class="character-info">
+                        <h2>
+                            Nível <span id="characterLevel">1</span>
+                            <span style="color: #eab308;">⭐</span>
+                        </h2>
+                        <p id="characterMessage">Adicione suas primeiras missões para começar sua jornada heroica! ⚔️</p>
+                        <div class="xp-badge">
+                            <span>✨</span>
+                            <span id="totalXP">0</span> XP
+                        </div>
+                    </div>
+                </div>
+ 
+                <div class="progress-section">
+                    <div class="progress-header">
+                        <span>⚔️ Progresso do Nível</span>
+                        <span id="levelProgress">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="levelProgressBar" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+ 
+            <!-- Add Task Card -->
+            <div class="card">
+                <div class="add-task-section">
+                    <h3>➕ Adicionar Nova Missão</h3>
+                    <div class="task-input-group">
+                        <input type="text" id="taskInput" class="task-input" placeholder="Nome da missão..." />
+                        <input type="number" id="pointsInput" class="points-input" value="10" min="1" />
+                        <button class="btn-primary" onclick="addTask()">
+                            <span>➕</span>
+                            Criar
+                        </button>
+                    </div>
+                </div>
+            </div>
+ 
+            <!-- Missions Card -->
+            <div class="card">
+                <div class="missions-header">
+                    <h3>📅 Missões de Hoje</h3>
+                    <div class="missions-count">
+                        <span id="completedCount">0</span>/<span id="totalCount">0</span>
+                    </div>
+                </div>
+ 
+                <div id="taskProgressBar" class="progress-bar" style="margin-bottom: 20px; display: none;">
+                    <div id="taskProgressFill" class="progress-fill" style="width: 0%; background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%);"></div>
+                </div>
+ 
+                <div id="taskList" class="task-list">
+                    <div class="empty-state">
+                        <svg width="80" height="80" fill="#60a5fa" viewBox="0 0 24 24">
+                            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+                        </svg>
+                        <h4>Nenhuma missão ainda!</h4>
+                        <p>Adicione sua primeira missão acima para começar ⚔️</p>
+                    </div>
+                </div>
+            </div>
+ 
+            <!-- Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="statCompleted">0</div>
+                    <div class="stat-label">Completas</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statLevel">1</div>
+                    <div class="stat-label">Nível</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statXP">0</div>
+                    <div class="stat-label">XP Total</div>
+                </div>
+            </div>
+        </div>
+         <!-- Tela Settings -->
+        <div id="settingsScreen" class="screen">
+            <div class="card">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <div style="width: 80px; height: 80px; background: #3b82f6; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 2.5rem;">⚙️</div>
+                    <h2 style="font-size: 2rem; color: #1e3a8a; margin-bottom: 10px;">Configurações</h2>
+                    <p style="color: #1e40af;">Personalize sua experiência</p>
+                </div>
+ 
+                <div class="settings-section">
+                    <h3>Perfil</h3>
+                    <div class="form-group">
+                        <label>Nome do Herói</label>
+                        <input type="text" id="heroNameInput" class="form-input" placeholder="Seu nome" />
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="emailInput" class="form-input" placeholder="seu@email.com" />
+                    </div>
+                </div>
+ 
+                <div class="settings-section">
+                    <h3>Notificações</h3>
+                    <div class="setting-item">
+                        <span>Lembrete de missões diárias</span>
+                        <input type="checkbox" class="checkbox-input" checked />
+                    </div>
+                    <div class="setting-item">
+                        <span>Som ao completar missões</span>
+                        <input type="checkbox" class="checkbox-input" checked />
+                    </div>
+                    <div class="setting-item">
+                        <span>Animações de celebração</span>
+                        <input type="checkbox" class="checkbox-input" checked />
+                    </div>
+                </div>
+ 
+                <div class="settings-section">
+                    <h3>Dados</h3>
+                    <button class="btn-export" onclick="exportProgress()">Exportar Progresso</button>
+                    <button class="btn-reset" onclick="resetAllTasks()">Resetar Todas as Missões</button>
+                </div>
+ 
+                <button class="btn-primary" onclick="saveSettings()" style="width: 100%; justify-content: center;">
+                    Salvar Alterações
+                </button>
+            </div>
+        </div>
+ 
+        <!-- Tela Login -->
+        <div id="loginScreen" class="screen">
+            <div class="login-container">
+                <div class="card login-card">
+                    <div class="login-icon">👤</div>
+                    <h2>Entrar no NeuroFlow</h2>
+                    <p>Entre para continuar sua jornada heroica</p>
+ 
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="loginEmail" class="form-input" placeholder="seu@email.com" />
+                    </div>
+ 
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" />
+                    </div>
+ 
+                    <button class="btn-primary" onclick="handleLogin()" style="width: 100%; justify-content: center; margin-top: 10px;">
+                        Entrar ⚔️
+                    </button>
+ 
+                    <div class="forgot-link">
+                        <a href="#" onclick="showScreen('forgotPassword')">Esqueci minha senha</a>
+                    </div>
+ 
+                    <div class="divider">
+                        <p>Não tem uma conta?</p>
+                        <button class="btn-secondary" onclick="showScreen('register')">Criar Conta Nova</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+ 
+        <!-- Tela Registro -->
+        <div id="registerScreen" class="screen">
+            <div class="login-container">
+                <div class="card login-card">
+                    <div class="login-icon">🛡️</div>
+                    <h2>Criar Conta</h2>
+                    <p>Inicie sua jornada heroica hoje!</p>
+ 
+                    <div class="form-group">
+                        <label>Nome de Usuário</label>
+                        <input type="text" id="registerUsername" class="form-input" placeholder="Escolha um nome" />
+                    </div>
+ 
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="registerEmail" class="form-input" placeholder="seu@email.com" />
+                    </div>
+ 
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <input type="password" id="registerPassword" class="form-input" placeholder="••••••••" />
+                    </div>
+ 
+                    <div class="form-group">
+                        <label>Confirmar Senha</label>
+                        <input type="password" id="registerPasswordConfirm" class="form-input" placeholder="••••••••" />
+                    </div>
+ 
+                    <button class="btn-primary" onclick="handleRegister()" style="width: 100%; justify-content: center; margin-top: 10px;">
+                        Criar Conta ⚔️
+                    </button>
+ 
+                    <div class="divider">
+                        <p>Já tem uma conta?</p>
+                        <button class="btn-secondary" onclick="showScreen('login')">Fazer Login</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+ 
+        <!-- Tela Esqueci Senha -->
+        <div id="forgotPasswordScreen" class="screen">
+            <div class="login-container">
+                <div class="card login-card">
+                    <div class="login-icon">🔑</div>
+                    <h2>Recuperar Senha</h2>
+                    <p>Digite seu email para receber instruções</p>
+ 
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="forgotEmail" class="form-input" placeholder="seu@email.com" />
+                    </div>
+ 
+                    <button class="btn-primary" onclick="handleForgotPassword()" style="width: 100%; justify-content: center; margin-top: 10px;">
+                        Enviar Instruções 📧
+                    </button>
+ 
+                    <div class="divider">
+                        <p>Lembrou sua senha?</p>
+                        <button class="btn-secondary" onclick="showScreen('login')">Voltar ao Login</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+ 
+        <!-- Tela Perfil -->
+        <div id="profileScreen" class="screen">
+            <div class="card">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #3b82f6, #2563eb); border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 3rem; border: 4px solid #1e40af;">👤</div>
+                    <h2 style="font-size: 2rem; color: #1e3a8a; margin-bottom: 5px;" id="profileUsername">Aventureiro</h2>
+                    <p style="color: #1e40af; font-size: 1.1rem;" id="profileHeroName">Herói Iniciante</p>
+                </div>
+ 
+                <div class="stats-grid" style="margin-bottom: 30px;">
+                    <div class="stat-card">
+                        <div class="stat-value" id="profileLevel">1</div>
+                        <div class="stat-label">Nível</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="profileXP">0</div>
+                        <div class="stat-label">XP Total</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="profileTasks">0</div>
+                        <div class="stat-label">Missões</div>
+                    </div>
+                </div>
+ 
+                <div class="settings-section">
+                    <h3>🏆 Conquistas Recentes</h3>
+                    <div id="achievementsList">
+                        <p style="text-align: center; color: #60a5fa; padding: 20px;">Complete missões para desbloquear conquistas!</p>
+                    </div>
+                </div>
+
+             </script>
+ 
+    <script src="script.js"></script>
+</body>
+</html>
