@@ -670,7 +670,7 @@ body {
     .back-button {
     position: absolute;
     top: 20px;
-    right: 20px;
+    right: 20   px;
     background: linear-gradient(135deg, #3b82f6, #2563eb);
     color: white;
     padding: 10px 20px;
