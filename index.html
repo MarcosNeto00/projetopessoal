@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroFlow - Suporte Neurodivergente</title>
+    
+    <!-- Import Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FIREBASE IMPORTS (MANDATORY) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // REMOVEMOS 'orderBy' DA LISTA DE IMPORTS DO FIREBASE
+        import { getFirestore, doc, addDoc, setDoc, onSnapshot, collection, query, deleteDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Ativar logs para debug
+        setLogLevel('Debug');
+
+        // Configurações e Variáveis Globais (Disponíveis no escopo global através do window)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        // Inicialização do Firebase e Autenticação
+        const initFirebase = async () => {
+            if (Object.keys(firebaseConfig).length > 0) {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                window.db = db; // Tornar DB global para acesso JS
+                
+                // 1. Tentar autenticar com token ou anonimamente
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        console.log("Usuário autenticado com token customizado.");
+                    } else {
+                        await signInAnonymously(auth);
+                        console.log("Usuário logado anonimamente.");
+                    }
+                } catch (error) {
+                    console.error("Erro durante a autenticação Firebase:", error);
+                    try {
+                         await signInAnonymously(auth);
+                    } catch (anonError) {
+                         console.error("Erro no sign-in anônimo:", anonError);
+                    }
+                }
+
+                // 2. Listener de Mudança de Estado de Autenticação
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        document.getElementById('user-id-display').textContent = `ID do Usuário: ${userId}`;
+                        console.log("Firebase Auth State Changed. User ID:", userId);
+                        
+                        // Iniciar os listeners APÓS a autenticação
+                        if (window.setupDataListeners) {
+                            window.setupDataListeners(db, userId, appId);
+                        }
+
+                    } else {
+                        userId = crypto.randomUUID();
+                        isAuthReady = true;
+                        document.getElementById('user-id-display').textContent = `ID do Usuário (Anônimo): ${userId}`;
+                        console.log("Firebase Auth State Changed. No user logged in.");
+                    }
+                });
+            } else {
+                console.warn("Firebase Configuração não encontrada. As tarefas não serão salvas.");
+                isAuthReady = true;
+            }
+        };
+
+        initFirebase();
+        
+        // Exportar funções e variáveis necessárias para o escopo global do JS
+        window.getUserId = () => userId;
+        window.getAppId = () => appId;
+        window.getIsAuthReady = () => isAuthReady;
+        window.getDb = () => db;
+
+        // Exportar as funções do Firestore necessárias
+        window.firestore = {
+            doc, addDoc, setDoc, onSnapshot, collection, query, deleteDoc, updateDoc, getDoc
+        };
+
+    </script>
+    
+    <style>
+        /* Estilos Personalizados - CSS */
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        
+        .section-title {
+            color: #312e81;
+        }
+        
+        .btn-primary {
+            background-color: #6366f1;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        .btn-primary:hover {
+            background-color: #4f46e5;
+            transform: translateY(-1px);
+        }
+        
+        .feature-icon {
+            color: #818cf8;
+        }
+        
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Estilo para a barra de tarefas */
+        .task-bar {
+            height: 10px;
+            background-color: #e0e7ff;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        .task-progress {
+            background-color: #6366f1;
+            transition: width 0.3s ease-in-out;
+        }
+
+        /* Estilo para o display de Nível */
+        .level-bar {
+            height: 8px;
+            background-color: #f3f4f6;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        .xp-progress {
+            background-color: #10b981; /* Green 500 */
+            transition: width 0.3s ease-in-out;
+        }
+    </style>
+    
+    <!-- Configuração customizada do Tailwind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-indigo': '#6366f1',
+                        'bg-calm': '#f7f9fb',
+                        'success-green': '#10b981',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="text-gray-700">
+
+    <!-- Header and Navigation -->
+    <header class="bg-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo/Brand -->
+                <a href="#hero" id="brand-logo" class="text-2xl font-bold text-primary-indigo hover:text-indigo-700 transition duration-300 cursor-pointer">
+                    NeuroFlow
+                </a>
+
+                <!-- Desktop Navigation Links -->
+                <nav class="hidden md:flex space-x-8">
+                    <a href="#recursos" class="text-gray-600 hover:text-primary-indigo font-medium transition duration-300 nav-link">Recursos</a>
+                    <a href="#missao" class="text-gray-600 hover:text-primary-indigo font-medium transition duration-300 nav-link">Missão</a>
+                    <a href="#comunidade" class="text-gray-600 hover:text-primary-indigo font-medium transition duration-300 nav-link">Comunidade</a>
+                    <a href="#contato" class="text-gray-600 hover:text-primary-indigo font-medium transition duration-300 nav-link">Contato</a>
+                </nav>
+
+                <!-- Mobile Menu Button -->
+                <button id="mobile-menu-button" class="md:hidden p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-indigo">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile Menu (Hidden by default) -->
+        <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-gray-100">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#recursos" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-indigo-50 hover:text-primary-indigo nav-link">Recursos</a>
+                <a href="#missao" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-indigo-50 hover:text-primary-indigo nav-link">Missão</a>
+                <a href="#comunidade" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-indigo-50 hover:text-primary-indigo nav-link">Comunidade</a>
+                <a href="#contato" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:bg-indigo-50 hover:text-primary-indigo nav-link">Contato</a>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Conteúdo Principal (Visível por padrão) -->
+        <div id="main-content" class="min-h-screen">
+            <!-- Hero Section -->
+            <section id="hero" class="bg-bg-calm pt-16 pb-24 sm:pt-24 sm:pb-32">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                    <h1 class="section-title text-5xl sm:text-6xl lg:text-7xl font-extrabold leading-tight mb-4">
+                        NeuroFlow<br class="hidden sm:inline"> Ferramentas para o Seu Ritmo.
+                    </h1>
+                    <p class="mt-6 max-w-3xl mx-auto text-xl text-gray-600">
+                        O NeuroFlow foi criado para mentes que funcionam de forma única. Organize tarefas, gerencie o foco e encontre o seu equilíbrio sensorial em um ambiente digital calmo e intuitivo.
+                    </p>
+                    <div class="mt-10 flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                        <a href="#" class="btn-primary inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-xl text-white shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-indigo">
+                            Baixe Agora (Em Breve!)
+                        </a>
+                        <!-- Botão que agora ativa a tela de tarefas -->
+                        <button id="explore-tasks-button" class="inline-flex items-center justify-center px-8 py-3 border-2 border-primary-indigo text-base font-medium rounded-xl text-primary-indigo bg-white hover:bg-indigo-50 transition duration-300">
+                            Explore as Tarefas
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Features Section (Recursos) -->
+            <section id="recursos" class="py-20 bg-white">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="lg:text-center">
+                        <h2 class="text-base text-primary-indigo font-semibold tracking-wide uppercase">O Que Oferecemos</h2>
+                        <p class="mt-2 text-3xl leading-8 font-extrabold tracking-tight section-title sm:text-4xl">
+                            Recursos Desenvolvidos Pensando em Você
+                        </p>
+                    </div>
+                    <div class="mt-16">
+                        <dl class="space-y-10 md:space-y-0 md:grid md:grid-cols-3 md:gap-x-8 md:gap-y-10">
+                            <div class="relative p-6 bg-indigo-50 rounded-xl shadow-md transition duration-300 hover:shadow-lg">
+                                <dt><div class="absolute flex items-center justify-center h-12 w-12 rounded-full bg-primary-indigo text-white"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div><p class="ml-16 text-xl leading-6 font-medium section-title">Foco Personalizado</p></dt>
+                                <dd class="mt-2 ml-16 text-base text-gray-600">Temporizadores ajustáveis (Pomodoro modificado), música ambiente de baixa frequência e um modo "anti-distração" que minimiza estímulos visuais.</dd>
+                            </div>
+                            <div class="relative p-6 bg-indigo-50 rounded-xl shadow-md transition duration-300 hover:shadow-lg">
+                                <dt><div class="absolute flex items-center justify-center h-12 w-12 rounded-full bg-primary-indigo text-white"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2m-9 0V3h4m-4 2h4"></path></svg></div><p class="ml-16 text-xl leading-6 font-medium section-title">Organizador Visual</p></dt>
+                                <dd class="mt-2 ml-16 text-base text-gray-600">Crie rotinas e listas de tarefas usando checklists visuais (ícones e cores), com lembretes não-invasivos e decomposição de tarefas complexas em passos simples.</dd>
+                            </div>
+                            <div class="relative p-6 bg-indigo-50 rounded-xl shadow-md transition duration-300 hover:shadow-lg">
+                                <dt><div class="absolute flex items-center justify-center h-12 w-12 rounded-full bg-primary-indigo text-white"><svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2444/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg></div><p class="ml-16 text-xl leading-6 font-medium section-title">Bem-Estar Sensorial</p></dt>
+                                <dd class="mt-2 ml-16 text-base text-gray-600">Um "medidor de estresse sensorial" que rastreia gatilhos e sugere intervenções calmantes (exercícios de respiração, sons neutros) baseadas no seu perfil.</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Mission Section (Missão) - ATUALIZADA -->
+            <section id="missao" class="py-20 bg-bg-calm">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="lg:grid lg:grid-cols-2 lg:gap-8 lg:items-center">
+                        <div>
+                            <h2 class="text-base text-primary-indigo font-semibold tracking-wide uppercase">Nosso Compromisso</h2>
+                            <p class="mt-2 text-3xl leading-8 font-extrabold tracking-tight section-title sm:text-4xl">
+                                Tecnologia Que Entende a Neurodiversidade
+                            </p>
+                            <p class="mt-4 text-xl text-gray-600">
+                                Acreditamos que a tecnologia deve ser uma ferramenta de suporte, não uma fonte de sobrecarga. A interface do NeuroFlow foi desenhada com cores neutras, layouts previsíveis e navegação simplificada.
+                            </p>
+                            <p class="mt-4 text-gray-600">
+                                Nossa missão é fornecer ferramentas que capacitem pessoas neurodivergentes (como autistas, pessoas com TDAH, dislexia, entre outras) a gerenciar seus desafios diários com autonomia e sem o estigma das soluções "padrão".
+                            </p>
+                        </div>
+                        
+                        <!-- Painel de Nível e Missão Diária (CRONÔMETRO) -->
+                        <div class="mt-10 lg:mt-0 flex justify-center">
+                            <div class="w-full max-w-md bg-white p-6 rounded-2xl shadow-xl border-t-4 border-success-green">
+                                <div class="flex items-center space-x-4 mb-4">
+                                    <svg class="w-10 h-10 text-success-green" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                    <h3 class="text-2xl font-semibold text-gray-800">Seu Progresso de Missão</h3>
+                                </div>
+                                
+                                <div class="space-y-4">
+                                    <!-- Status da Missão Diária -->
+                                    <div class="border-b pb-4 border-gray-100">
+                                        <p class="text-gray-600 font-medium">Total de Tarefas Registradas:</p>
+                                        <p id="total-tasks-count" class="text-xl font-bold text-primary-indigo">0</p>
+                                        <p class="mt-1 text-gray-600 font-medium">Missões Concluídas Hoje:</p>
+                                        <p id="daily-missions-count" class="text-xl font-bold text-success-green">0</p>
+                                    </div>
+
+                                    <!-- Status do Nível -->
+                                    <div>
+                                        <div class="flex justify-between items-center">
+                                            <p class="text-gray-600 font-medium">Nível de neuro:</p>
+                                            <span id="level-display" class="text-3xl font-extrabold text-success-green">1</span>
+                                        </div>
+                                        <p id="xp-text" class="text-sm text-gray-500 mb-2">XP: 0 de 5 para o próximo nível</p>
+                                        <div class="level-bar">
+                                            <div id="xp-progress-bar" class="xp-progress h-full" style="width: 0%;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="comunidade" class="py-20 bg-white">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                    <h2 class="text-3xl leading-8 font-extrabold tracking-tight section-title sm:text-4xl">Junte-se à Nossa Comunidade</h2>
+                    <p class="mt-4 text-xl text-gray-600 max-w-4xl mx-auto">A jornada é melhor quando compartilhada. Troque dicas e estratégias de neurogerenciamento com outros usuários em um fórum moderado e seguro, dedicado ao suporte mútuo.</p>
+                    <div class="mt-8">
+                        <a href="#" class="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-xl text-white shadow-lg bg-indigo-500 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-indigo">Acesse o Fórum</a>
+                    </div>
+                </div>
+            </section>
+        </div>
+        
+        <!-- TELA DE ORGANIZADOR DE TAREFAS -->
+        <div id="task-manager-content" class="min-h-screen bg-bg-calm hidden pt-16 pb-24">
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                
+                <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-xl">
+                    <h1 class="text-4xl font-extrabold section-title mb-2 text-center">
+                        Organizador de Tarefas Diárias
+                    </h1>
+                    <p class="text-center text-lg text-gray-500 mb-6">Use o cronômetro para medir o tempo gasto em cada missão.</p>
+
+                    <!-- Progresso Geral -->
+                    <div class="mb-8 p-4 bg-indigo-50 rounded-xl shadow-inner">
+                        <h3 class="text-lg font-semibold text-primary-indigo mb-2">Progresso de Tarefas</h3>
+                        <p id="task-summary" class="text-sm text-gray-600 mb-3">0 de 0 tarefas concluídas (0%)</p>
+                        <div class="task-bar">
+                            <div id="task-progress-bar" class="task-progress h-full" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Formulário de Nova Tarefa -->
+                    <form id="add-task-form" class="flex flex-col sm:flex-row gap-3 mb-8">
+                        <input type="text" id="task-input" placeholder="O que você precisa fazer?" required 
+                               class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-primary-indigo focus:border-primary-indigo shadow-sm">
+                        
+                        <button type="submit" class="btn-primary flex-shrink-0 px-6 py-3 text-white font-medium rounded-xl shadow-md flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            Adicionar Tarefa
+                        </button>
+                    </form>
+
+                    <!-- Lista de Tarefas -->
+                    <div id="tasks-list" class="space-y-3">
+                        <p class="text-center text-gray-500 loading-message">Carregando tarefas...</p>
+                    </div>
+                    
+                    <div class="mt-8 text-center text-sm text-gray-400" id="user-id-display">
+                        ID do Usuário: Carregando...
+                    </div>
+                    <div class="mt-2 text-center text-sm text-red-500 hidden" id="firebase-error-message">
+                        Erro: Não foi possível conectar ao banco de dados. As tarefas não serão salvas.
+                    </div>
+                    <button id="back-to-home-button" class="mt-8 w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-xl text-primary-indigo bg-indigo-100 hover:bg-indigo-200 transition duration-300">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                        Voltar para a Página Inicial
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer and Contact -->
+    <footer id="contato" class="bg-gray-800 text-white py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+                <div>
+                    <h3 class="text-xl font-semibold mb-4 text-primary-indigo">NeuroFLow</h3>
+                    <p class="text-sm text-gray-400">Suporte digital feito sob medida para mentes neurodivergentes. Sua paz de espírito em um clique.</p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Links Rápidos</h3>
+                    <ul class="space-y-2">
+                        <li><a href="#recursos" class="text-gray-400 hover:text-white transition duration-300 nav-link">Recursos</a></li>
+                        <li><a href="#missao" class="text-gray-400 hover:text-white transition duration-300 nav-link">Missão</a></li>
+                        <li><a href="#contato" class="text-gray-400 hover:text-white transition duration-300 nav-link">Contato</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Fale Conosco</h3>
+                    <p class="text-sm text-gray-400">Email: suporte@neuroflow.com.br</p>
+                    <p class="text-sm text-gray-400 mt-2">Siga-nos: instragam: NeuroFlow</p>
+                    <div class="flex space-x-4 mt-2">
+                        <a href="#" class="text-gray-400 hover:text-primary-indigo transition duration-300">
+                             <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.013 4.85.071 1.17.057 1.762.247 2.227.465.58.28.973.659 1.341 1.027.369.368.749.761 1.029 1.341.217.466.407 1.059.464 2.228.057 1.267.07 1.647.07 4.85s-.013 3.584-.07 4.85c-.057 1.17-.247 1.762-.464 2.227-.28.58-.659.973-1.029 1.341-.368.369-.76.749-1.341 1.029-.465.217-1.058.407-2.228.464-1.267.057-1.647.07-4.85.07s-3.584-.013-4.85-.07c-1.17-.057-1.762-.247-2.227-.464-.28-.58-.659-.973-1.341-1.029-.368-.368-.76-.749-1.341-1.029-.465-.217-1.058-.407-2.227-.464-1.267-.057-1.647-.07-4.85-.07s-3.584-.013-4.85-.07c-.067-1.492-.282-2.327-.685-3.146-.402-.806-1.054-1.458-1.86-1.86-.819-.402-1.654-.617-3.146-.684-1.492-.067-1.913-.083-5.65-.083s4.158-.016 5.65-.083c1.492-.067 2.327-.282 3.146-.685.402-.806 1.054-1.458 1.86-1.86.819-.402 1.654-.617 3.146-.684 1.492-.067 1.913-.083 5.65-.083zm0 5.405a4.595 4.595 0 100 9.19 4.595 4.595 0 000-9.19zm0 7.595a3 3 0 110-6 3 3 0 010 6z"/></svg>
+                        </a>
+                    </div>
+                </div>
+                <div class="col-span-2 md:col-span-1">
+                    <h3 class="text-lg font-semibold mb-4">Novidades</h3>
+                    <p class="text-sm text-gray-400 mb-3">Receba atualizações sobre o lançamento e novos recursos.</p>
+                    <form onsubmit="subscribe(event)" class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                        <input type="email" id="newsletter-email" placeholder="Seu e-mail" required class="w-full sm:w-auto p-2 rounded-lg text-gray-800 focus:ring-primary-indigo focus:border-primary-indigo border-gray-300 shadow-inner">
+                        <button type="submit" class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition duration-300">
+                            Cadastrar
+                        </button>
+                    </form>
+                    <p id="subscription-message" class="mt-2 text-sm text-gray-300"></p>
+                </div>
+            </div>
+            <div class="mt-8 pt-8 border-t border-gray-700 text-center">
+                <p class="text-sm text-gray-400">&copy; 2025 NeuroFLow Todos os direitos reservados. | Privacidade | Termos</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // JavaScript de Interatividade e Lógica de Tarefas (To-Do List)
+
+        // Variáveis de Elementos
+        const mainContent = document.getElementById('main-content');
+        const taskManagerContent = document.getElementById('task-manager-content');
+        const footer = document.getElementById('contato');
+        const mobileMenuButton = document.getElementById('mobile-menu-button');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const brandLogo = document.getElementById('brand-logo');
+        const exploreTasksButton = document.getElementById('explore-tasks-button');
+        const backToHomeButton = document.getElementById('back-to-home-button');
+        const addTaskForm = document.getElementById('add-task-form');
+        const taskInput = document.getElementById('task-input');
+        const tasksList = document.getElementById('tasks-list');
+        const taskProgressBar = document.getElementById('task-progress-bar');
+        const taskSummary = document.getElementById('task-summary');
+        const firebaseErrorMessage = document.getElementById('firebase-error-message');
+        
+        const totalTasksCount = document.getElementById('total-tasks-count'); // NOVO
+        const dailyMissionsCount = document.getElementById('daily-missions-count');
+        const levelDisplay = document.getElementById('level-display');
+        const xpText = document.getElementById('xp-text');
+        const xpProgressBar = document.getElementById('xp-progress-bar');
+
+        const TASKS_PER_LEVEL = 5;
+        let timerIntervalId = null; // ID para o setInterval do cronômetro
+        let currentRunningTimerId = null; // ID da tarefa com o cronômetro ativo
+
+        // --- FUNÇÕES DE UTILIDADE ---
+
+        function formatDuration(ms) {
+            if (ms === 0) return '00:00:00';
+            const totalSeconds = Math.floor(ms / 1000);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            
+            const pad = (num) => num.toString().padStart(2, '0');
+            return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+        }
+
+        // Retorna o timestamp de meia-noite (00:00:00) do dia atual
+        function getStartOfTodayTimestamp() {
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+            return now.getTime();
+        }
+
+
+        // --- FUNÇÕES DE NAVEGAÇÃO ---
+
+        function showTaskManager() {
+            mainContent.classList.add('hidden');
+            footer.classList.add('hidden');
+            taskManagerContent.classList.remove('hidden');
+            document.title = "NeuroFlow - Minhas Tarefas";
+            window.scrollTo(0, 0); // Rola para o topo
+        }
+
+        function showMainContent() {
+            mainContent.classList.remove('hidden');
+            footer.classList.remove('hidden');
+            taskManagerContent.classList.add('hidden');
+            document.title = "NeuroFlow - Suporte Neurodivergente";
+            window.scrollTo(0, 0); // Rola para o topo
+        }
+        
+        // Listeners de navegação
+        exploreTasksButton.addEventListener('click', showTaskManager);
+        backToHomeButton.addEventListener('click', showMainContent);
+        brandLogo.addEventListener('click', (e) => {
+             e.preventDefault();
+             showMainContent();
+        });
+
+
+        // --- LÓGICA DO FIREBASE / TAREFAS E GAMIFICAÇÃO ---
+        
+        // Função para atualizar o progresso de nível
+        function updateLevelProgress(tasks) {
+            totalTasksCount.textContent = tasks.length;
+            
+            const completedTasks = tasks.filter(t => t.completed).length;
+            
+            // Calcula o Nível
+            const currentLevel = Math.floor(completedTasks / TASKS_PER_LEVEL) + 1;
+            
+            // Calcula o XP para o Nível atual
+            const xpInCurrentLevel = completedTasks % TASKS_PER_LEVEL;
+            const xpPercentage = (xpInCurrentLevel / TASKS_PER_LEVEL) * 100;
+            
+            levelDisplay.textContent = currentLevel;
+            xpText.textContent = `XP: ${xpInCurrentLevel} de ${TASKS_PER_LEVEL} para o nível ${currentLevel + 1}`;
+            xpProgressBar.style.width = `${xpPercentage}%`;
+
+            // Calcula missões concluídas HOJE
+            const startOfToday = getStartOfTodayTimestamp();
+            const dailyCompleted = tasks.filter(t => t.completed && t.completedAt && t.completedAt >= startOfToday).length;
+            dailyMissionsCount.textContent = dailyCompleted;
+        }
+
+        // Função para atualizar a barra de progresso e o resumo (total de tarefas)
+        function updateProgress(tasks) {
+            const total = tasks.length;
+            const completed = tasks.filter(t => t.completed).length;
+            const percentage = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+            taskSummary.textContent = `${completed} de ${total} tarefas concluídas (${percentage}%)`;
+            taskProgressBar.style.width = `${percentage}%`;
+            
+            // Garante que o progresso do Nível também seja atualizado com os dados brutos de tarefas
+            updateLevelProgress(tasks);
+        }
+
+        // Inicia o intervalo global para atualizar o cronômetro ativo
+        function startGlobalTimerUpdate(tasks) {
+            // Limpa o intervalo antigo, se existir
+            if (timerIntervalId !== null) {
+                clearInterval(timerIntervalId);
+            }
+
+            // Encontra a tarefa com o timerStartTime ativo
+            const activeTask = tasks.find(t => t.timerStartTime !== null);
+            currentRunningTimerId = activeTask ? activeTask.id : null;
+
+            if (activeTask) {
+                timerIntervalId = setInterval(() => {
+                    // Recalcula o tempo decorrido e atualiza a UI
+                    const elapsedTime = Date.now() - activeTask.timerStartTime;
+                    const totalTime = activeTask.totalDurationMs + elapsedTime;
+
+                    const timerDisplay = document.getElementById(`timer-display-${activeTask.id}`);
+                    if (timerDisplay) {
+                        timerDisplay.textContent = formatDuration(totalTime);
+                    }
+                }, 1000); // Atualiza a cada segundo
+            } else {
+                 timerIntervalId = null;
+            }
+        }
+        
+        // Função para renderizar as tarefas
+        function renderTasks(tasks) {
+            tasksList.innerHTML = ''; // Limpa a lista atual
+
+            // Reinicia o global timer interval
+            startGlobalTimerUpdate(tasks);
+
+            if (tasks.length === 0) {
+                tasksList.innerHTML = '<p class="text-center text-gray-500 py-6">Você não tem nenhuma tarefa pendente. Que tal adicionar uma?</p>';
+            }
+
+            tasks.forEach(task => {
+                const taskItem = document.createElement('div');
+                taskItem.id = task.id;
+                
+                // Calcula o tempo atual gasto (se o cronômetro estiver rodando)
+                let currentDuration = task.totalDurationMs || 0;
+                let isTimerRunning = task.timerStartTime !== null;
+
+                if (isTimerRunning) {
+                    currentDuration += (Date.now() - task.timerStartTime);
+                }
+
+                taskItem.className = `flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl shadow-sm transition duration-150 ease-in-out ${task.completed ? 'bg-green-50 border-l-4 border-success-green' : 'bg-white border-l-4 border-primary-indigo hover:shadow-md'}`;
+                
+                // HTML para o item da tarefa
+                taskItem.innerHTML = `
+                    <div class="flex items-center flex-grow min-w-0 w-full sm:w-auto">
+                        <input type="checkbox" id="task-${task.id}" ${task.completed ? 'checked' : ''} 
+                               class="flex-shrink-0 h-5 w-5 text-success-green border-gray-300 rounded focus:ring-success-green cursor-pointer"
+                               data-task-id="${task.id}">
+                        <label for="task-${task.id}" class="ml-4 text-lg flex-grow min-w-0 truncate cursor-pointer ${task.completed ? 'line-through text-gray-500' : 'text-gray-800 font-medium'}">
+                            ${task.text}
+                        </label>
+                    </div>
+
+                    <div class="flex items-center mt-3 sm:mt-0 sm:ml-4 w-full sm:w-auto justify-between sm:justify-end">
+                        
+                        <!-- Display do Cronômetro -->
+                        <span id="timer-display-${task.id}" class="text-sm font-semibold text-gray-600 mr-4 flex-shrink-0">
+                            ${formatDuration(currentDuration)}
+                        </span>
+
+                        <!-- Botão Iniciar/Parar Cronômetro -->
+                        ${!task.completed ? `
+                            <button class="timer-btn flex-shrink-0 px-3 py-1 text-sm font-medium rounded-lg shadow-sm transition duration-300
+                                ${isTimerRunning ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-primary-indigo hover:bg-indigo-700 text-white'}
+                                ${isTimerRunning && task.id !== currentRunningTimerId ? 'opacity-50 cursor-not-allowed' : ''}
+                                " 
+                                data-action="${isTimerRunning ? 'stop' : 'start'}" data-task-id="${task.id}" ${isTimerRunning && task.id !== currentRunningTimerId ? 'disabled' : ''}>
+                                <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${isTimerRunning ? 'M6 18h12V6H6v12z' : 'M5 3l14 9-14 9V3z'}"></path></svg>
+                                ${isTimerRunning ? 'Parar' : 'Iniciar'}
+                            </button>
+                        ` : ''}
+
+                        <!-- Botão Deletar -->
+                        <button class="delete-task-btn p-2 ml-2 text-gray-400 hover:text-red-500 transition duration-150" data-task-id="${task.id}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3"></path></svg>
+                        </button>
+                    </div>
+                `;
+
+                tasksList.appendChild(taskItem);
+            });
+            updateProgress(tasks);
+        }
+
+        // Função para adicionar nova tarefa
+        async function addTask(e) {
+            e.preventDefault();
+            
+            const db = window.getDb();
+            const userId = window.getUserId();
+            const appId = window.getAppId();
+            const isAuthReady = window.getIsAuthReady();
+            const { collection, addDoc } = window.firestore;
+
+            if (!isAuthReady || !db || !userId) {
+                firebaseErrorMessage.classList.remove('hidden');
+                console.error("Firebase não está pronto ou DB/User ID está faltando.");
+                return;
+            }
+            firebaseErrorMessage.classList.add('hidden');
+
+            const taskText = taskInput.value.trim();
+            if (taskText === "") return;
+
+            try {
+                const tasksCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'tasks');
+                
+                await addDoc(tasksCollectionRef, {
+                    text: taskText,
+                    completed: false,
+                    createdAt: Date.now(),
+                    completedAt: null,
+                    timerStartTime: null, // NOVO: Timestamp quando o cronômetro começou
+                    totalDurationMs: 0,   // NOVO: Duração total acumulada em milissegundos
+                });
+
+                taskInput.value = ''; // Limpa o input
+            } catch (error) {
+                console.error("Erro ao adicionar tarefa:", error);
+                firebaseErrorMessage.classList.remove('hidden');
+                firebaseErrorMessage.textContent = "Erro ao adicionar tarefa. Verifique a conexão.";
+            }
+        }
+        addTaskForm.addEventListener('submit', addTask);
+
+        // --- LÓGICA DO CRONÔMETRO (Timer) ---
+
+        async function startTaskTimer(taskId) {
+            const db = window.getDb();
+            const userId = window.getUserId();
+            const appId = window.getAppId();
+            const isAuthReady = window.getIsAuthReady();
+            const { doc, updateDoc, getDoc } = window.firestore;
+
+            if (!isAuthReady || !db || !userId) return;
+
+            // 1. Tenta parar qualquer cronômetro ativo primeiro
+            if (currentRunningTimerId && currentRunningTimerId !== taskId) {
+                console.log(`Parando timer ativo: ${currentRunningTimerId} antes de iniciar ${taskId}`);
+                await stopTaskTimer(currentRunningTimerId);
+            }
+
+            // 2. Inicia o novo cronômetro
+            try {
+                const taskRef = doc(db, 'artifacts', appId, 'users', userId, 'tasks', taskId);
+                
+                await updateDoc(taskRef, {
+                    timerStartTime: Date.now(),
+                });
+                
+                // Atualiza o estado local para forçar a renderização imediata do timer
+                currentRunningTimerId = taskId; 
+                console.log(`Cronômetro iniciado para a tarefa: ${taskId}`);
+
+            } catch (error) {
+                console.error("Erro ao iniciar cronômetro:", error);
+            }
+        }
+
+        async function stopTaskTimer(taskId) {
+            const db = window.getDb();
+            const userId = window.getUserId();
+            const appId = window.getAppId();
+            const isAuthReady = window.getIsAuthReady();
+            const { doc, updateDoc, getDoc } = window.firestore;
+
+            if (!isAuthReady || !db || !userId) return;
+
+            try {
+                const taskRef = doc(db, 'artifacts', appId, 'users', userId, 'tasks', taskId);
+                const taskSnap = await getDoc(taskRef);
+
+                if (taskSnap.exists()) {
+                    const taskData = taskSnap.data();
+                    
+                    if (taskData.timerStartTime !== null) {
+                        const newDuration = Date.now() - taskData.timerStartTime;
+                        const totalDuration = (taskData.totalDurationMs || 0) + newDuration;
+
+                        await updateDoc(taskRef, {
+                            timerStartTime: null, // Para o cronômetro
+                            totalDurationMs: totalDuration, // Acumula a duração
+                        });
+                        
+                        // Atualiza o estado local
+                        if (currentRunningTimerId === taskId) {
+                            currentRunningTimerId = null;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Erro ao parar cronômetro:", error);
+            }
+        }
+        
+        // --- LÓGICA DE AÇÕES (Checkbox e Deletar) ---
+
+        // Função para alternar o status de conclusão
+        async function toggleTaskCompleted(taskId) {
+            const db = window.getDb();
+            const userId = window.getUserId();
+            const appId = window.getAppId();
+            const isAuthReady = window.getIsAuthReady();
+            const { doc, updateDoc, getDoc } = window.firestore;
+            
+            if (!isAuthReady || !db || !userId) return;
+
+            try {
+                const taskRef = doc(db, 'artifacts', appId, 'users', userId, 'tasks', taskId);
+                const taskElement = document.getElementById(taskId);
+                const isChecked = taskElement.querySelector('input[type="checkbox"]').checked;
+                
+                // Se estiver concluindo, para o cronômetro e salva o tempo
+                if (isChecked && currentRunningTimerId === taskId) {
+                    await stopTaskTimer(taskId); 
+                }
+
+                // Atualiza o estado e o timestamp de conclusão
+                await updateDoc(taskRef, {
+                    completed: isChecked,
+                    completedAt: isChecked ? Date.now() : null 
+                });
+            } catch (error) {
+                console.error("Erro ao alternar status da tarefa:", error);
+            }
+        }
+        
+        // Função para deletar uma tarefa
+        async function deleteTask(taskId) {
+            const db = window.getDb();
+            const userId = window.getUserId();
+            const appId = window.getAppId();
+            const isAuthReady = window.getIsAuthReady();
+            const { doc, deleteDoc } = window.firestore;
+
+            if (!isAuthReady || !db || !userId) return;
+
+            try {
+                const taskRef = doc(db, 'artifacts', appId, 'users', userId, 'tasks', taskId);
+                await deleteDoc(taskRef);
+            } catch (error) {
+                console.error("Erro ao deletar tarefa:", error);
+            }
+        }
+
+        // Listener de cliques na lista de tarefas (Deleção, Toggle e Timer)
+        tasksList.addEventListener('click', (e) => {
+            const target = e.target.closest('.delete-task-btn') || e.target.closest('.timer-btn');
+            
+            if (!target) return;
+
+            const taskId = target.dataset.taskId;
+
+            if (target.classList.contains('delete-task-btn')) {
+                deleteTask(taskId);
+            } else if (target.classList.contains('timer-btn')) {
+                const action = target.dataset.action;
+                if (action === 'start') {
+                    startTaskTimer(taskId);
+                } else if (action === 'stop') {
+                    stopTaskTimer(taskId);
+                }
+            }
+        });
+
+        tasksList.addEventListener('change', (e) => {
+            if (e.target.type === 'checkbox' && e.target.dataset.taskId) {
+                toggleTaskCompleted(e.target.dataset.taskId);
+            }
+        });
+        
+        // Função principal que configura todos os listeners
+        window.setupDataListeners = (db, userId, appId) => {
+            const { collection, query, onSnapshot } = window.firestore;
+
+            // 1. Configura listener de Tarefas (para renderização e cálculo de progresso)
+            const tasksCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'tasks');
+            
+            // REMOVEMOS A ORDENAÇÃO DO FIRESTORE (que causava o erro de índice)
+            const q = query(tasksCollectionRef); 
+
+            onSnapshot(q, (snapshot) => {
+                const tasks = [];
+                snapshot.forEach(doc => {
+                    tasks.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // 2. ORDENAÇÃO NO LADO DO CLIENTE (JavaScript)
+                // Ordena primeiro por 'completed' (tarefas não concluídas primeiro) e depois por 'createdAt' (mais recente primeiro)
+                tasks.sort((a, b) => {
+                    // Tarefas não concluídas (false) vêm antes das concluídas (true)
+                    if (a.completed !== b.completed) {
+                        return (a.completed ? 1 : -1);
+                    }
+                    // Em caso de mesmo status de conclusão, ordena por data de criação (mais recente primeiro)
+                    return b.createdAt - a.createdAt;
+                });
+                
+                renderTasks(tasks); // Atualiza UI da lista e chama updateProgress
+            }, (error) => {
+                console.error("Erro ao ouvir tarefas:", error);
+                firebaseErrorMessage.classList.remove('hidden');
+                firebaseErrorMessage.textContent = "Erro de conexão em tempo real com o banco de dados. As tarefas podem não ser atualizadas.";
+                tasksList.innerHTML = '<p class="text-center text-red-500 py-6">Falha ao carregar as tarefas. Verifique sua conexão.</p>';
+            });
+        };
+        
+        // --- LÓGICA DE NAVEGAÇÃO BÁSICA E MENU MOBILE (Do código original) ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', () => {
+                    mobileMenu.classList.toggle('hidden');
+                });
+            }
+
+            document.querySelectorAll('.nav-link').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+
+                    if (mobileMenu && !mobileMenu.classList.contains('hidden')) {
+                         mobileMenu.classList.add('hidden');
+                    }
+                    
+                    const targetId = this.getAttribute('href');
+                    const targetElement = document.querySelector(targetId);
+
+                    // Se a nova seção for a Missão, garante que a tela principal esteja visível
+                    if (targetId.startsWith('#') && targetId !== '#hero') {
+                         showMainContent(); // Volta para a tela principal
+                         setTimeout(() => {
+                           if (targetElement) {
+                               const headerHeight = 64;
+                               const elementPosition = targetElement.getBoundingClientRect().top;
+                               const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
+                               window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+                           }
+                        }, 100);
+                        return;
+                    }
+
+
+                    if (targetElement) {
+                        const headerHeight = 64;
+                        const elementPosition = targetElement.getBoundingClientRect().top;
+                        const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
+                        window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+                    }
+                });
+            });
+        });
+
+        // 3. Simulação de Inscrição na Newsletter (Função global)
+        function subscribe(event) {
+            event.preventDefault(); 
+            const emailInput = document.getElementById('newsletter-email');
+            const messageElement = document.getElementById('subscription-message');
+            const email = emailInput.value;
+
+            if (email) {
+                messageElement.textContent = `Obrigado! O e-mail ${email} foi cadastrado com sucesso. Você receberá nossas novidades.`;
+                messageElement.classList.remove('text-red-300');
+                messageElement.classList.add('text-green-300');
+                emailInput.value = '';
+            } else {
+                messageElement.textContent = `Por favor, insira um e-mail válido.`;
+                messageElement.classList.remove('text-green-300');
+                messageElement.classList.add('text-red-300');
+            }
+
+            setTimeout(() => {
+                messageElement.textContent = '';
+            }, 5000);
+        }
+    </script>
+
+</body>
+</html>
